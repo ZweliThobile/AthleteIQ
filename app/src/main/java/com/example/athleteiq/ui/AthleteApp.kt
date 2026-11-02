@@ -182,6 +182,8 @@ private fun LoginScreen(model: AthleteViewModel, onAuthenticated: () -> Unit) {
     // Passwords are deliberately kept out of saved instance state.
     var password by remember { mutableStateOf("") }
     var confirm by remember { mutableStateOf("") }
+    var passwordVisible by remember { mutableStateOf(false) }
+    var confirmVisible by remember { mutableStateOf(false) }
     var name by rememberSaveable { mutableStateOf("") }
     var age by rememberSaveable { mutableStateOf("") }
     var hours by rememberSaveable { mutableStateOf("") }
@@ -197,7 +199,7 @@ private fun LoginScreen(model: AthleteViewModel, onAuthenticated: () -> Unit) {
         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
             listOf("Sign In", "Sign Up").forEachIndexed { index, label ->
                 SegmentedButton(selected = signingUp == (index == 1), enabled = !busy,
-                    onClick = { signingUp = index == 1; error = null; password = ""; confirm = "" },
+                    onClick = { signingUp = index == 1; error = null; password = ""; confirm = ""; passwordVisible = false; confirmVisible = false },
                     shape = SegmentedButtonDefaults.itemShape(index, 2)) { Text(label) }
             }
         }
@@ -218,10 +220,16 @@ private fun LoginScreen(model: AthleteViewModel, onAuthenticated: () -> Unit) {
             Field("Training hours per week", hours, { hours = it; error = null }, true)
         }
         OutlinedTextField(value = email, onValueChange = { email = it; error = null }, label = { Text("Email address") }, singleLine = true, enabled = !busy, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email), modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp))
-        OutlinedTextField(value = password, onValueChange = { password = it; error = null }, label = { Text("Password") }, singleLine = true, enabled = !busy, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp))
+        OutlinedTextField(value = password, onValueChange = { password = it; error = null }, label = { Text("Password") }, singleLine = true, enabled = !busy, visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+            trailingIcon = { TextButton(enabled = !busy, onClick = { passwordVisible = !passwordVisible }) { Text(if (passwordVisible) "Hide" else "Show") } },
+            modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp))
         if (signingUp) {
             Text("Use at least 8 characters.", style = MaterialTheme.typography.bodySmall)
-            OutlinedTextField(value = confirm, onValueChange = { confirm = it; error = null }, label = { Text("Confirm password") }, singleLine = true, enabled = !busy, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp))
+            OutlinedTextField(value = confirm, onValueChange = { confirm = it; error = null }, label = { Text("Confirm password") }, singleLine = true, enabled = !busy, visualTransformation = if (confirmVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                trailingIcon = { TextButton(enabled = !busy, onClick = { confirmVisible = !confirmVisible }) { Text(if (confirmVisible) "Hide" else "Show") } },
+                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp))
         }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         Button(enabled = !busy, onClick = {
