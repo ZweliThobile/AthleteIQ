@@ -1,6 +1,8 @@
 package com.example.athleteiq.ui
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.viewinterop.AndroidView
+import android.widget.NumberPicker
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -37,7 +39,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private val destinations = listOf("dashboard" to "Training", "profile" to "Profile", "goals" to "Goals", "recommendations" to "Insights")
+private val destinations = listOf("dashboard" to "Training", "goals" to "Goals", "recommendations" to "Insights", "shop" to "Shop", "profile" to "Profile")
 
 @Composable
 private fun deviceViewModel(): AthleteViewModel {
@@ -78,6 +80,7 @@ fun AthleteApp(model: AthleteViewModel = deviceViewModel()) {
             composable("profile") { ProfileScreen(state, model::saveProfile, model::logout) }
             composable("goals") { GoalsScreen(state, model) }
             composable("recommendations") { RecommendationsScreen(state) }
+            composable("shop") { ShopScreen(state) }
         }
     }
 }
@@ -96,6 +99,7 @@ private fun SportIcon(kind: String, modifier: Modifier = Modifier) {
                 drawCircle(color, 4f * scale, Offset(12f * scale, 7f * scale), style = Stroke(1.8f * scale))
                 move(4f, 21f); line(4f, 18f); path.cubicTo(4f * scale, 11f * scale, 20f * scale, 11f * scale, 20f * scale, 18f * scale); line(20f, 21f)
             }
+            "shop" -> { move(4f, 8f); line(20f, 8f); line(21f, 21f); line(3f, 21f); path.close(); move(8f, 9f); line(8f, 5f); path.cubicTo(8f * scale, 0f, 16f * scale, 0f, 16f * scale, 5f * scale); line(16f, 9f) }
             "goals" -> { move(5f, 22f); line(5f, 3f); line(20f, 3f); line(16f, 8f); line(20f, 13f); line(5f, 13f) }
             else -> { move(12f, 2f); line(15f, 9f); line(22f, 12f); line(15f, 15f); line(12f, 22f); line(9f, 15f); line(2f, 12f); line(9f, 9f); path.close() }
         }
@@ -104,22 +108,25 @@ private fun SportIcon(kind: String, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun Brand() {
+private fun Brand(compact: Boolean = false) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.primaryContainer) {
             SportIcon("dashboard", Modifier.padding(10.dp))
         }
         Column {
             Text("athleteiq", fontWeight = FontWeight.ExtraBold, fontSize = 22.sp, letterSpacing = (-0.8).sp)
-            Text("BUILT FOR THE LONG RUN", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (!compact) Text("BUILT FOR THE LONG RUN", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
 
 @Composable
-private fun Page(title: String, subtitle: String, hero: Boolean = false, content: @Composable ColumnScope.() -> Unit) {
+private fun Page(title: String, subtitle: String, hero: Boolean = false, headerAction: (@Composable () -> Unit)? = null, content: @Composable ColumnScope.() -> Unit) {
     Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
-        Brand()
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(Modifier.weight(1f)) { Brand(compact = headerAction != null) }
+            headerAction?.invoke()
+        }
         if (hero) WelcomeHero() else {
             Spacer(Modifier.height(4.dp))
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -261,7 +268,22 @@ private fun LoginScreen(model: AthleteViewModel, onAuthenticated: () -> Unit) {
 @Composable
 private fun DashboardScreen(state: AthleteUiState) {
     val distance = state.sessions.sumOf { it.distanceKm }
-    Page("Hello, ${state.profile.name.substringBefore(' ')}", "Your training dashboard · Illustrative sample week") {
+    var showStravaDialog by rememberSaveable { mutableStateOf(false) }
+    if (showStravaDialog) {
+        AlertDialog(
+            onDismissRequest = { showStravaDialog = false },
+            title = { Text("Feature coming soon") },
+            text = { Text("Connect Strava will let you link your Strava account and import your runs, rides, and other endurance activities into AthleteIQ. Your distance, duration, pace, and available heart-rate data will help you track training progress and get more personalised recommendations.\n\nStrava syncing is not available yet. No account is connected when you tap this button.") },
+            confirmButton = { TextButton(onClick = { showStravaDialog = false }) { Text("Got it") } }
+        )
+    }
+    Page("Hello, ${state.profile.name.substringBefore(' ')}", "Your training dashboard · Illustrative sample week",
+        headerAction = {
+            OutlinedButton(onClick = { showStravaDialog = true }, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp)) {
+                Text("Connect Strava")
+            }
+        }
+    ) {
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer), shape = RoundedCornerShape(26.dp)) {
             Column(Modifier.fillMaxWidth().padding(24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Text("THIS WEEK • SAMPLE PLAN", style = MaterialTheme.typography.labelSmall)
@@ -344,26 +366,151 @@ private fun GoalsScreen(state: AthleteUiState, model: AthleteViewModel) {
     var name by rememberSaveable { mutableStateOf("") }
     var distance by rememberSaveable { mutableStateOf("") }
     var minutes by rememberSaveable { mutableStateOf("") }
+    var showTimePicker by rememberSaveable { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
+    if (showTimePicker) {
+        GoalDurationPicker(
+            initialMinutes = minutes.toIntOrNull() ?: 120,
+            onDismiss = { showTimePicker = false },
+            onConfirm = { total -> minutes = total.toString(); message = null; showTimePicker = false }
+        )
+    }
     Page("Race goals", "Give every training week a purpose.") {
         if (state.goals.isEmpty()) Text("No goals yet. Add your next race below.")
         state.goals.forEach { goal ->
             Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp)) {
                 Text(goal.name, style = MaterialTheme.typography.titleMedium)
-                Text("${goal.distanceKm} km · Target ${goal.targetMinutes} minutes")
+                Text("${goal.distanceKm} km · Target ${formatDuration(goal.targetMinutes)}")
                 TextButton(onClick = { model.removeGoal(goal) }) { Text("Remove goal") }
             } }
         }
         Text("Add a race", style = MaterialTheme.typography.titleLarge)
         Field("Race name", name, { name = it; message = null })
         Field("Distance (km)", distance, { distance = it; message = null }, true)
-        Field("Target time (minutes)", minutes, { minutes = it; message = null }, true)
+        Text("Target finish time", style = MaterialTheme.typography.titleMedium)
+        OutlinedButton(onClick = { showTimePicker = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp), shape = RoundedCornerShape(16.dp)) {
+            Text(minutes.toIntOrNull()?.let { "${formatDuration(it)}  ·  Change time" } ?: "Pick target time")
+        }
+        Text("Choose a duration in hours and minutes.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Feedback(message)
         Button(onClick = {
             val error = model.addGoal(name, distance, minutes)
             message = error ?: "Race goal added."
             if (error == null) { name = ""; distance = ""; minutes = "" }
         }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp), shape = RoundedCornerShape(16.dp)) { Text("Add goal") }
+    }
+}
+
+private fun formatDuration(totalMinutes: Int): String = "${totalMinutes / 60}h ${(totalMinutes % 60).toString().padStart(2, '0')}m"
+
+@Composable
+private fun GoalDurationPicker(initialMinutes: Int, onDismiss: () -> Unit, onConfirm: (Int) -> Unit) {
+    var hours by rememberSaveable { mutableStateOf(initialMinutes / 60) }
+    var minutes by rememberSaveable { mutableStateOf(initialMinutes % 60) }
+    val total = hours * 60 + minutes
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Pick your target time") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("How long do you want to take to finish your race?")
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    DurationWheel("Hours", hours, 100, { hours = it }, Modifier.weight(1f))
+                    DurationWheel("Minutes", minutes, 59, { minutes = it }, Modifier.weight(1f))
+                }
+                Text(formatDuration(total), style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
+                if (total !in 5..6000) Text("Choose between 5 minutes and 100 hours.", color = MaterialTheme.colorScheme.error)
+            }
+        },
+        confirmButton = { TextButton(enabled = total in 5..6000, onClick = { onConfirm(total) }) { Text("Set time") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+@Composable
+private fun DurationWheel(label: String, selected: Int, maximum: Int, onChange: (Int) -> Unit, modifier: Modifier = Modifier) {
+    val textColor = MaterialTheme.colorScheme.onSurface
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(label, style = MaterialTheme.typography.labelLarge)
+        AndroidView(
+            modifier = Modifier.fillMaxWidth().height(150.dp),
+            factory = { context ->
+                NumberPicker(context).apply {
+                    minValue = 0
+                    maxValue = maximum
+                    wrapSelectorWheel = false
+                    descendantFocusability = NumberPicker.FOCUS_BLOCK_DESCENDANTS
+                    contentDescription = label
+                    value = selected
+                    setOnValueChangedListener { _, _, value -> onChange(value) }
+                }
+            },
+            update = { picker ->
+                if (picker.value != selected) picker.value = selected
+                if (android.os.Build.VERSION.SDK_INT >= 29) picker.textColor = android.graphics.Color.argb(
+                    255, (textColor.red * 255).toInt(), (textColor.green * 255).toInt(), (textColor.blue * 255).toInt())
+            }
+        )
+    }
+}
+
+@Composable
+private fun ShopScreen(state: AthleteUiState) {
+    val sport = state.profile.sport
+    val products = state.shopProducts
+    var category by rememberSaveable(sport) { mutableStateOf("All") }
+    var selectedId by rememberSaveable(sport) { mutableStateOf<String?>(null) }
+    val selectedProduct = products.find { it.id == selectedId }
+    selectedProduct?.let { product ->
+        AlertDialog(
+            onDismissRequest = { selectedId = null },
+            title = { Text(product.name) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("${product.category} · ${sport} collection", color = MaterialTheme.colorScheme.primary)
+                    Text(product.details)
+                    product.features.forEach { Text("• $it") }
+                    Text("Sample product · Retailer links, prices and checkout are coming later.", style = MaterialTheme.typography.bodySmall)
+                }
+            },
+            confirmButton = { TextButton(onClick = { selectedId = null }) { Text("Done") } }
+        )
+    }
+    Page("Gear for your goals", "Explore the ${sport.lowercase()} collection, chosen from your athlete profile.") {
+        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer), shape = RoundedCornerShape(24.dp)) {
+            Row(Modifier.fillMaxWidth().padding(22.dp), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                SportIcon("shop", Modifier.size(32.dp))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("YOUR ${sport.uppercase()} KIT", style = MaterialTheme.typography.labelSmall)
+                    Text("Go further, well equipped.", style = MaterialTheme.typography.titleLarge)
+                    Text("Change your sport in Profile to explore a different collection.", style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        }
+        Text("Sample catalogue · Product browsing only", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            (listOf("All") + products.map { it.category }.distinct()).forEach { option ->
+                FilterChip(selected = category == option, onClick = { category = option }, label = { Text(option) })
+            }
+        }
+        val visibleProducts = products.filter { category == "All" || it.category == category }
+        Text("${visibleProducts.size} products for $sport", style = MaterialTheme.typography.titleMedium)
+        visibleProducts.forEach { product ->
+            Card(onClick = { selectedId = product.id }, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(22.dp)) {
+                Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = RoundedCornerShape(10.dp)) {
+                            Text(product.category.uppercase(), Modifier.padding(horizontal = 10.dp, vertical = 6.dp), style = MaterialTheme.typography.labelSmall)
+                        }
+                        Text("SAMPLE", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Text(product.name, style = MaterialTheme.typography.titleLarge)
+                    Text(product.summary, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("View details  →", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                }
+            }
+        }
+        if (visibleProducts.isEmpty()) InfoCard("No products here yet", "Try another category or update your sport in Profile.")
     }
 }
 

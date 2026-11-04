@@ -11,7 +11,9 @@ data class AthleteUiState(
     val profile: AthleteProfile = AthleteProfile(),
     val goals: List<RaceGoal> = emptyList(),
     val sessions: List<TrainingSession> = emptyList()
-)
+) {
+    val shopProducts: List<ShopProduct> get() = ProductCatalog.forSport(profile.sport)
+}
 
 object InputValidation {
     fun login(email: String, password: String): String? = when {
